@@ -1,0 +1,277 @@
+import customtkinter as ctk
+from tkinter import ttk, messagebox
+from CTkMessagebox import CTkMessagebox
+from fpdf import FPDF
+from PIL import Image
+from datetime import datetime
+from ingrediente import Ingrediente
+from menu import Menu
+
+# Clase Pedido
+
+# Clase Principal de la Aplicación del Restaurante
+class RestauranteApp(ctk.CTk):
+    def __init__(self):
+        super().__init__()
+
+        self.stock_ingredientes = {}
+
+        # Menús fijos
+        self.menus = [
+            Menu("Papas Fritas", 500, {"papas": 5}),
+            Menu("Pepsi", 1100, {"bebida": 1}),
+            Menu("Completo", 1800, {"vienesa": 1, "pan de completo": 1, "tomate": 1, "palta": 1}),
+            Menu("Hamburguesa", 3500, {"pan de hamburguesa": 1, "queso": 1, "churrasco de carne": 1})
+        ]
+
+        self.pedido_actual = Pedido()
+
+        self.title("Aplicación Restaurante")
+        self.geometry("1200x700")
+
+        # Pestañas
+        self.tabs = ctk.CTkTabview(self, width=600, height=600)
+        self.tabs.pack(padx=20, pady=20)
+        
+        
+        # Pestaña 1: Ingreso de Ingredientes
+        self.pest_ingreso = self.tabs.add("Ingreso de Ingredientes")
+
+        self.nombre_ingrediente = ctk.CTkEntry(self.pest_ingreso, placeholder_text="Nombre del Ingrediente")
+        self.nombre_ingrediente.pack(pady=5)
+
+        self.cantidad_ingrediente = ctk.CTkEntry(self.pest_ingreso, placeholder_text="Cantidad")
+        self.cantidad_ingrediente.pack(pady=5)
+
+        self.boton_ingresar = ctk.CTkButton(self.pest_ingreso, text="Ingresar Ingrediente", command=self.ingresar_ingrediente)
+        self.boton_ingresar.pack(pady=10)
+
+        self.treeview_ingredientes = ttk.Treeview(self.pest_ingreso, columns=("Nombre", "Cantidad"), show="headings")
+        self.treeview_ingredientes.heading("Nombre", text="Nombre")
+        self.treeview_ingredientes.heading("Cantidad", text="Cantidad")
+        self.treeview_ingredientes.pack(expand=True, fill="both", padx=10, pady=10)
+
+        self.boton_eliminar = ctk.CTkButton(self.pest_ingreso, text="Eliminar Ingrediente", command=self.eliminar_ingrediente)
+        self.boton_eliminar.pack(pady=10)
+
+        self.boton_generar_menu = ctk.CTkButton(self.pest_ingreso, text="Generar Menús", command=self.generar_menus)
+        self.boton_generar_menu.pack(side="bottom", pady=10)
+
+        # Pestaña 2: Pedido
+        self.pest_pedido = self.tabs.add("Pedido")
+
+        # Frame Superior para los menús
+        self.frame_superior = ctk.CTkFrame(self.pest_pedido)
+        self.frame_superior.pack(fill="x", pady=10)
+
+        self.generar_tarjetas_menus()
+
+        # Frame Inferior con Treeview de Pedido
+        self.treeview_pedidos = ttk.Treeview(self.pest_pedido, columns=("Menú", "Cantidad", "Precio Unitario"), show="headings")
+        self.treeview_pedidos.heading("Menú", text="Menú")
+        self.treeview_pedidos.heading("Cantidad", text="Cantidad")
+        self.treeview_pedidos.heading("Precio Unitario", text="Precio Unitario")
+        self.treeview_pedidos.pack(pady=10)
+
+        # Botón Eliminar Menú
+        self.boton_eliminar_menu = ctk.CTkButton(self.pest_pedido, text="Eliminar Menú", command=self.eliminar_menu)
+        self.boton_eliminar_menu.pack(pady=10)
+
+        # Frame para botón Generar Boleta y Mostrar Total
+        self.frame_inferior = ctk.CTkFrame(self.pest_pedido)
+        self.frame_inferior.pack(pady=10)
+
+        # Botón Generar Boleta
+        self.boton_generar_boleta = ctk.CTkButton(self.frame_inferior, text="Generar Boleta", command=self.generar_boleta)
+        self.boton_generar_boleta.pack(side="left", padx=10)
+
+        # Etiqueta para mostrar el total
+        self.label_total = ctk.CTkLabel(self.frame_inferior, text="Total: $0.00", font=("Arial", 16))
+        self.label_total.pack(side="left", padx=10)
+
+    def generar_tarjetas_menus(self):
+        for menu in self.menus:
+            tarjeta = ctk.CTkFrame(self.frame_superior, width=180, height=120)
+            tarjeta.pack(side="left", padx=10, pady=10)
+
+            label_nombre = ctk.CTkLabel(tarjeta, text=menu.nombre)
+            label_nombre.pack(pady=5)
+
+            # Añadir imagen
+            imagen = None
+            if menu.nombre == "Completo":
+                imagen = ctk.CTkImage(light_image=Image.open("icono_hotdog_sin_texto_64x64.png"), size=(64, 64))
+            elif menu.nombre == "Pepsi":
+                imagen = ctk.CTkImage(light_image=Image.open("icono_cola_64x64.png"), size=(64, 64))
+            elif menu.nombre == "Papas Fritas":
+                imagen = ctk.CTkImage(light_image=Image.open("icono_papas_fritas_64x64.png"), size=(64, 64))
+            elif menu.nombre == "Hamburguesa":
+                imagen = ctk.CTkImage(light_image=Image.open("icono_hamburguesa_negra_64x64.png"), size=(64, 64))
+
+            if imagen:
+                imagen_button = ctk.CTkButton(
+                    tarjeta, image=imagen, text="", width=150, height=150,  # Aumenta el tamaño del botón para una hitbox mayor
+                    command=lambda m=menu: self.agregar_menu_a_pedido(m),
+                    fg_color="transparent"  # Hace el botón transparente, solo mostrando la imagen
+                )
+                imagen_button.pack(pady=5)
+                
+                
+    def agregar_menu_a_pedido(self, menu):
+        self.pedido_actual.agregar_menu(menu, self.stock_ingredientes)
+        self.actualizar_treeview_pedidos()
+        self.actualizar_total()
+
+    def actualizar_treeview_pedidos(self):
+        for i in self.treeview_pedidos.get_children():
+            self.treeview_pedidos.delete(i)
+
+        for item in self.pedido_actual.menus.values():
+            self.treeview_pedidos.insert("", "end", values=(item['menu'].nombre, item['cantidad'], item['menu'].precio))
+
+    def actualizar_total(self):
+        total = self.pedido_actual.total
+        self.label_total.configure(text=f"Total: ${total:.2f}")
+
+    def eliminar_menu(self):
+        selected_item = self.treeview_pedidos.selection()
+        if selected_item:
+            nombre_menu = self.treeview_pedidos.item(selected_item)['values'][0]
+            self.pedido_actual.eliminar_menu(nombre_menu, self.stock_ingredientes)
+            self.actualizar_treeview_pedidos()
+            self.actualizar_total()
+        else:
+            CTkMessagebox(title="Advertencia", message="Seleccione un menú para eliminar", icon="warning", option_1="OK")
+
+    def ingresar_ingrediente(self):
+        nombre = self.nombre_ingrediente.get()
+        cantidad = self.cantidad_ingrediente.get()
+
+        if all(x.isalpha() or x.isspace() for x in nombre) and cantidad.isdigit():
+            cantidad = int(cantidad)
+            if nombre in self.stock_ingredientes:
+                self.stock_ingredientes[nombre].agregar_stock(cantidad)
+            else:
+                self.stock_ingredientes[nombre] = Ingrediente(nombre, cantidad)
+            self.actualizar_treeview_ingredientes()
+        else:
+            CTkMessagebox(title="Error", message="Ingrese un nombre válido y cantidad positiva", icon="cancel", option_1="OK")
+
+    def eliminar_ingrediente(self):
+        selected_item = self.treeview_ingredientes.selection()
+        if selected_item:
+            nombre = self.treeview_ingredientes.item(selected_item)['values'][0]
+            del self.stock_ingredientes[nombre]
+            self.actualizar_treeview_ingredientes()
+        else:
+            CTkMessagebox(title="Advertencia", message="Seleccione un ingrediente para eliminar", icon="warning", option_1="OK")
+            
+    def actualizar_treeview_ingredientes(self):
+        for i in self.treeview_ingredientes.get_children():
+            self.treeview_ingredientes.delete(i)
+        for ingrediente in self.stock_ingredientes.values():
+            self.treeview_ingredientes.insert("", "end", values=(ingrediente.nombre, ingrediente.cantidad))
+
+    def generar_menus(self):
+        pass  
+
+    def generar_boleta(self):
+        self.pedido_actual.generar_boleta()
+              
+        
+class Pedido:
+    def __init__(self):
+        self.menus = {}
+        self.total = 0
+
+    def agregar_menu(self, menu, stock_ingredientes):
+        if menu.verificar_disponibilidad(stock_ingredientes):
+            if menu.nombre in self.menus:
+                self.menus[menu.nombre]['cantidad'] += 1
+            else:
+                self.menus[menu.nombre] = {'menu': menu, 'cantidad': 1}
+            menu.descontar_ingredientes(stock_ingredientes)
+            self.total += menu.precio
+        else:
+            CTkMessagebox(title="Error", message=f"No hay suficientes ingredientes para {menu.nombre}", icon="cancel", option_1="OK")
+
+    def eliminar_menu(self, menu, stock_ingredientes):
+        if menu in self.menus:
+            self.total -= self.menus[menu]['menu'].precio * self.menus[menu]['cantidad']
+            del self.menus[menu]
+
+    # Función para generar la boleta en formato PDF con detalles completos
+    def generar_boleta(self):
+        if not self.menus:
+            CTkMessagebox(title="Boleta Generada", message=f"No elegiste ningun menu", icon="info")
+            return
+
+        # Crear un archivo PDF con los detalles del pedido
+        pdf = FPDF()
+        pdf.add_page()
+        pdf.set_font("Arial", 'B', 16)
+        pdf.cell(0, 10, "Boleta Restaurante", ln=True, align='C')
+        
+        # Información del negocio
+        pdf.set_font("Arial", size=12)
+        pdf.cell(0, 10, "Razón Social del Negocio", ln=True, align='L')
+        pdf.cell(0, 10, "RUT: 12345678-9", ln=True, align='L')
+        pdf.cell(0, 10, "Dirección: Calle Falsa 123", ln=True, align='L')
+        pdf.cell(0, 10, "Teléfono: +56 9 1234 5678", ln=True, align='L')
+        pdf.cell(0, 10, f"Fecha: {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}", ln=True, align='R')
+        pdf.ln(10)
+
+        # Encabezado de la tabla
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(60, 10, "Nombre", border=1, align='C')
+        pdf.cell(30, 10, "Cantidad", border=1, align='C')
+        pdf.cell(40, 10, "Precio Unitario", border=1, align='C')
+        pdf.cell(40, 10, "Subtotal", border=1, align='C')
+        pdf.ln()
+
+        # Detalles de la tabla
+        pdf.set_font("Arial", size=12)
+        total = 0
+        for nombre, datos in self.menus.items():
+            cantidad = datos["cantidad"]
+            precio = datos["menu"].precio
+            subtotal = precio * cantidad
+            pdf.cell(60, 10, nombre, border=1)
+            pdf.cell(30, 10, str(cantidad), border=1, align='C')
+            pdf.cell(40, 10, f"${precio:.2f}", border=1, align='C')
+            pdf.cell(40, 10, f"${subtotal:.2f}", border=1, align='C')
+            pdf.ln()
+            total += subtotal
+
+        # Subtotal, IVA y Total
+        pdf.set_font("Arial", 'B', 12)
+        pdf.cell(130, 10, "Subtotal:", 0, 0, 'R')
+        pdf.cell(40, 10, f"${total:.2f}", border=1, align='C')
+        pdf.ln()
+
+        iva = total * 0.19  # IVA del 19%
+        pdf.cell(130, 10, "IVA (19%):", 0, 0, 'R')
+        pdf.cell(40, 10, f"${iva:.2f}", border=1, align='C')
+        pdf.ln()
+
+        total_con_iva = total + iva
+        pdf.cell(130, 10, "Total:", 0, 0, 'R')
+        pdf.cell(40, 10, f"${total_con_iva:.2f}", border=1, align='C')
+        pdf.ln(10)
+
+        # Pie de página
+        pdf.set_font("Arial", 'I', 10)
+        pdf.cell(0, 10, "Gracias por su compra. Para cualquier consulta, llámenos al +56 9 1234 5678.", 0, 1, 'C')
+        pdf.cell(0, 10, "Los productos adquiridos no tienen garantía.", 0, 1, 'C')
+
+        # Guardar el archivo PDF
+        pdf_filename = "boleta.pdf"
+        pdf.output(pdf_filename)
+
+        # Mostrar mensaje de confirmación
+        CTkMessagebox(title="Boleta Generada", message=f"Boleta generada y guardada en: {pdf_filename}.", icon="info")
+
+
+if __name__ == "__main__":
+    app = RestauranteApp()
+    app.mainloop()
