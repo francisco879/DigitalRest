@@ -1,0 +1,1 @@
+# Excepciones propias de pago
